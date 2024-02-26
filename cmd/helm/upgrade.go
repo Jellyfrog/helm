@@ -79,6 +79,7 @@ func newUpgradeCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
 	valueOpts := &values.Options{}
 	var outfmt output.Format
 	var createNamespace bool
+	var valuesOnly bool
 
 	cmd := &cobra.Command{
 		Use:   "upgrade [RELEASE] [CHART]",
@@ -112,11 +113,13 @@ func newUpgradeCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
 			}
 			// Fixes #7002 - Support reading values from STDIN for `upgrade` command
 			// Must load values AFTER determining if we have to call install so that values loaded from stdin are are not read twice
-			if client.Install {
+			if client.Install || valuesOnly {
 				// If a release does not exist, install it.
 				histClient := action.NewHistory(cfg)
 				histClient.Max = 1
-				if _, err := histClient.Run(args[0]); err == driver.ErrReleaseNotFound {
+				history, err := histClient.Run(args[0])
+
+				if client.Install && err == driver.ErrReleaseNotFound {
 					// Only print this to stdout for table output
 					if outfmt == output.Table {
 						fmt.Fprintf(out, "Release %q does not exist. Installing it now.\n", args[0])
@@ -150,6 +153,10 @@ func newUpgradeCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
 					return outfmt.Write(out, &statusPrinter{rel, settings.Debug, false, false, false})
 				} else if err != nil {
 					return err
+				}
+
+				if valuesOnly {
+					client.Version = history[len(history)-1].Chart.Metadata.Version
 				}
 			}
 
@@ -239,6 +246,7 @@ func newUpgradeCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
 
 	f := cmd.Flags()
 	f.BoolVar(&createNamespace, "create-namespace", false, "if --install is set, create the release namespace if not present")
+	f.BoolVar(&valuesOnly, "values-only", false, "if a release by this name already exists, use the same chart version")
 	f.BoolVarP(&client.Install, "install", "i", false, "if a release by this name doesn't already exist, run an install")
 	f.BoolVar(&client.Devel, "devel", false, "use development versions, too. Equivalent to version '>0.0.0-0'. If --version is set, this is ignored")
 	f.StringVar(&client.DryRunOption, "dry-run", "", "simulate an install. If --dry-run is set with no option being specified or as '--dry-run=client', it will not attempt cluster connections. Setting '--dry-run=server' allows attempting cluster connections.")
